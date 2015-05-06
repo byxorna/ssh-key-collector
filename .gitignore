@@ -3,6 +3,8 @@
 *.a
 *.so
 
+ssh-key-collector
+
 # Folders
 _obj
 _test
