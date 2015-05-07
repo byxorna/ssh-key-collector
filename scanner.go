@@ -16,6 +16,12 @@ type SshPublicKey struct {
 	PublicKey string
 }
 
+type SshPublicKeyList []SshPublicKey
+
+func (a SshPublicKeyList) Len() int           { return len(a) }
+func (a SshPublicKeyList) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a SshPublicKeyList) Less(i, j int) bool { return a[i].Hostname < a[j].Hostname }
+
 func ScanHost(host string, timeout int) (SshPublicKey, error) {
 	scan_type := "rsa"
 	s := SshPublicKey{Hostname: host}
@@ -25,10 +31,7 @@ func ScanHost(host string, timeout int) (SshPublicKey, error) {
 		return s, fmt.Errorf("Unable to resolve %s to IP: %s", host, err)
 	}
 	s.Ips = ips
-	// ssh-keyscan -t rsa,dsa,ecdsa $(hostname -f),172.18.110.119,fuckface
-	aliases := s.AliasList()
-	aliaslist := strings.Join(aliases, ",")
-	scan_output, err := RunCommand(fmt.Sprintf("ssh-keyscan -t %s %s", scan_type, aliaslist))
+	scan_output, err := RunCommand(fmt.Sprintf("ssh-keyscan -t %s %s", scan_type, strings.Join(s.AliasList(), ",")))
 	if err != nil {
 		return s, fmt.Errorf("Unable to scan %s: %s", s.Hostname, err)
 	}
