@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -13,10 +12,12 @@ type SshPublicKey struct {
 	Hostname  string
 	Ips       []net.IP
 	Aliases   []string
+	Type      string
 	PublicKey string
 }
 
 func ScanHost(host string, timeout int) (SshPublicKey, error) {
+	scan_type := "rsa"
 	s := SshPublicKey{Hostname: host}
 	// first, resolve the host to IP[s]. Some VIPs may map to multiple backends, so track them all
 	ips, err := net.LookupIP(host)
@@ -27,12 +28,26 @@ func ScanHost(host string, timeout int) (SshPublicKey, error) {
 	// ssh-keyscan -t rsa,dsa,ecdsa $(hostname -f),172.18.110.119,fuckface
 	aliases := s.AliasList()
 	aliaslist := strings.Join(aliases, ",")
-	scan_output, err := RunCommand(fmt.Sprintf("ssh-keyscan -t rsa %s", aliaslist))
+	scan_output, err := RunCommand(fmt.Sprintf("ssh-keyscan -t %s %s", scan_type, aliaslist))
 	if err != nil {
 		return s, fmt.Errorf("Unable to scan %s: %s", s.Hostname, err)
 	}
-	//TODO format the scan_output properly, handle failures, etc
-	s.PublicKey = scan_output
+	lines := strings.Split(scan_output, "\n")
+	for _, l := range lines {
+		if strings.HasPrefix(l, s.Hostname) {
+			//github.com,192.30.252.131 ssh-rsa <key>
+			fields := strings.Fields(l)
+			if len(fields) < 3 {
+				return s, fmt.Errorf("Unexpected number of fields received from ssh-keyscan")
+			}
+			s.Type = fields[1]
+			s.PublicKey = fields[2]
+			break
+		}
+	}
+	if s.PublicKey == "" {
+		return s, fmt.Errorf("Unable to extract public key from ssh-keyscan")
+	}
 	return s, nil
 }
 
@@ -48,7 +63,7 @@ func (s *SshPublicKey) AliasList() []string {
 }
 
 func (s *SshPublicKey) String() string {
-	return fmt.Sprintf("FIXME")
+	return fmt.Sprintf("%s %s %s", strings.Join(s.AliasList(), ","), s.Type, s.PublicKey)
 }
 
 func RunCommand(cmdstr string) (string, error) {
@@ -56,8 +71,7 @@ func RunCommand(cmdstr string) (string, error) {
 	cmd := exec.Command("sh", "-c", cmdstr)
 	log.Printf("Running: %s\n", cmdstr)
 	combined, err := cmd.CombinedOutput()
-	// figure out the index of the null terminator
-	combined_len := bytes.Index(combined, []byte{0})
-	output = string(combined[:combined_len])
+	// []bytes are annoying as shit. just use string
+	output = string(combined)
 	return output, err
 }
